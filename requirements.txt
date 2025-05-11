@@ -1,4 +1,4 @@
-mediapipe
 streamlit
-opencv-python
+mediapipe
+opencv-python-headless
 pyttsx3
