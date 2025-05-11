@@ -44,8 +44,8 @@ def detect_smile(image):
                 face_landmarks.landmark[i].z < -0.05 for i in TONGUE_LANDMARKS
             )
             if teeth_visible or tongue_visible:
-                return True, "Smile detected!"
-    return False, "Please smile to continue."
+                return True, rgb
+    return False, rgb
 
 # Streamlit UI
 st.set_page_config(page_title="Smile Detector", layout="centered")
@@ -64,21 +64,20 @@ while cap.isOpened() and not detected:
         break
 
     frame = cv2.flip(frame, 1)
-    smile, msg = detect_smile(frame)
-    status_text.markdown(f"### {msg}")
+    smile_detected, rgb_frame = detect_smile(frame)
 
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    image_display.image(rgb_frame, channels="RGB")
-
-    if smile:
+    if smile_detected:
         detected = True
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         img_path = os.path.join(output_dir, f"smile_{timestamp}.jpg")
-        cv2.imwrite(img_path, frame)
-        status_text.markdown(f"## 😀 {np.random.choice(messages)}")
+        cv2.imwrite(img_path, cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR))
         image_display.image(rgb_frame, caption="Smile Captured!", channels="RGB")
+        status_text.markdown(f"## 😀 {np.random.choice(messages)}")
         time.sleep(4)
         break
+    else:
+        status_text.markdown(f"### Please smile to continue.")
+        image_display.image(rgb_frame, channels="RGB")
 
     if time.time() - start_time > 20:
         status_text.markdown("### Timeout. Please try again.")
