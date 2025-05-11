@@ -1,90 +1,89 @@
+import cv2
 import streamlit as st
 import numpy as np
 import mediapipe as mp
+import time
+from datetime import datetime
 from PIL import Image
 import os
-from datetime import datetime
 
-st.set_page_config(page_title="Smile Detector", layout="centered")
-st.title("😊 Smile Detector")
-st.markdown("---")
-
-st.write("Allow camera access and smile to light up the world!")
-
-# Initialize MediaPipe
+# Mediapipe setup
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1)
+face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False,
+                                   max_num_faces=1,
+                                   refine_landmarks=True,
+                                   min_detection_confidence=0.5)
 
-# Create folder to save smile photos
-output_folder = "smile_photos"
-os.makedirs(output_folder, exist_ok=True)
+# Output directory
+output_dir = "captured_smiles"
+os.makedirs(output_dir, exist_ok=True)
 
-# Helper function: detect smile (mouth open, teeth, or tongue)
-def detect_smile(frame):
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = face_mesh.process(rgb)
-    
-    if result.multi_face_landmarks:
-        landmarks = result.multi_face_landmarks[0].landmark
-        
-        # Mouth landmarks
-        top_lip = landmarks[13].y
-        bottom_lip = landmarks[14].y
-        left_corner = landmarks[0].x
-        right_corner = landmarks[16].x
-        
-        # Detect mouth openness (a simple measure of smile)
-        mouth_open = abs(top_lip - bottom_lip)
-        
-        # Check for smile based on mouth openness
-        if mouth_open > 0.02:
-            return True, "Smile detected"
-        
-        # Detect teeth exposure by checking mouth area brightness (we use a simple threshold)
-        mouth_region = frame[int(landmarks[13].y * frame.shape[0]):int(landmarks[14].y * frame.shape[0]),
-                             int(landmarks[0].x * frame.shape[1]):int(landmarks[16].x * frame.shape[1])]
-        if np.mean(mouth_region) > 150:  # Assuming teeth are brighter than the rest of the mouth
-            return True, "Teeth detected"
-        
-        # Detect tongue out by checking mouth width change or landmarks in the mouth
-        tongue_visible = landmarks[13].y < landmarks[14].y and mouth_open > 0.03
-        if tongue_visible:
-            return True, "Tongue detected"
-        
-    return False, "No smile or feature detected"
+# Define motivational messages
+messages = [
+    "Your smile lights up the world!",
+    "That smile is contagious!",
+    "What a wonderful smile you have!",
+    "You just made the day brighter!",
+    "Keep smiling, it's beautiful!"
+]
 
-# Helper function: encode to display
-def convert_image_to_base64(image):
-    _, buffer = cv2.imencode('.jpg', image)
-    base64_img = base64.b64encode(buffer).decode()
-    return f'data:image/jpeg;base64,{base64_img}'
+# Check if teeth or tongue is visible
+TEETH_LANDMARKS = [13, 14]
+TONGUE_LANDMARKS = [19, 87, 88]
 
-# Main app function
-def app():
-    # Streamlit camera input
-    camera_input = st.camera_input("Take a picture")
+# Smile detection logic
+def detect_smile(image):
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(rgb)
+    if results.multi_face_landmarks:
+        for face_landmarks in results.multi_face_landmarks:
+            teeth_visible = all(
+                face_landmarks.landmark[i].z < -0.05 for i in TEETH_LANDMARKS
+            )
+            tongue_visible = all(
+                face_landmarks.landmark[i].z < -0.05 for i in TONGUE_LANDMARKS
+            )
+            if teeth_visible or tongue_visible:
+                return True, "Smile detected!"
+    return False, "Please smile to continue."
 
-    if camera_input:
-        # Convert the image received from Streamlit into an OpenCV format
-        image = Image.open(camera_input)
-        frame = np.array(image)
+# Streamlit UI
+st.set_page_config(page_title="Smile Detector", layout="centered")
+st.title("😊 Smile Detector App")
+status_text = st.empty()
+image_display = st.empty()
 
-        # Detect smile, teeth, or tongue
-        detected_feature, feature_message = detect_smile(frame)
+# Initialize webcam
+cap = cv2.VideoCapture(0)
+detected = False
+start_time = time.time()
 
-        if detected_feature:
-            # Save image to local folder
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{output_folder}/smile_{timestamp}.jpg"
-            cv2.imwrite(filename, frame)
+while cap.isOpened() and not detected:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-            st.balloons()
-            st.image(frame, caption=f"{feature_message} 😁")
-            st.success("Your smile lights up the world!")
-            st.info("Have a wonderful day ✨")
-        else:
-            st.image(frame, caption="No smile or feature detected.")
+    frame = cv2.flip(frame, 1)
+    smile, msg = detect_smile(frame)
+    status_text.markdown(f"### {msg}")
 
-# Run the app
-if __name__ == "__main__":
-    app()
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    image_display.image(rgb_frame, channels="RGB")
+
+    if smile:
+        detected = True
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        img_path = os.path.join(output_dir, f"smile_{timestamp}.jpg")
+        cv2.imwrite(img_path, frame)
+        status_text.markdown(f"## 😀 {np.random.choice(messages)}")
+        image_display.image(rgb_frame, caption="Smile Captured!", channels="RGB")
+        time.sleep(4)
+        break
+
+    if time.time() - start_time > 20:
+        status_text.markdown("### Timeout. Please try again.")
+        break
+
+cap.release()
+st.markdown("---")
+st.markdown("#### Thank you for trying the Smile Detector!")
